@@ -9,7 +9,7 @@ dotenv.config();
 
 const app = express();
 app.use(bodyParser.json());
-app.use(cors());
+app.use(cors({ origin: 'https://pooja-collection-admin.vercel.app' }));
 
 const JWT_SECRET = process.env.JWT_SECRET || "your_jwt_secret";
 const PORT =  3001;
