@@ -1,329 +1,404 @@
 const express = require('express');
 const bodyParser = require('body-parser');
-const mongoose = require('mongoose');
+const app = express();
 const cors = require('cors');
 const bcrypt = require('bcrypt');
+const mysql = require('mysql2');
 const jwt = require('jsonwebtoken');
 const dotenv = require('dotenv');
 dotenv.config();
-
-const app = express();
 app.use(bodyParser.json());
-app.use(cors({ origin: 'https://pooja-collection-admin.vercel.app' }));
+app.use(cors());
 
+
+let date = new Date().toJSON().slice(0, 10);
+
+const connection = mysql.createConnection(
+    process.env.MYSQL_PUBLIC_URL
+);
+
+// JWT Secret
 const JWT_SECRET = process.env.JWT_SECRET || "your_jwt_secret";
-const PORT =  3001;
 
-// MongoDB Connection
-mongoose
-    .connect(process.env.MONGO_URI)
-    .then(() => console.log("MongoDB connected"))
-    .catch(err => console.error("MongoDB connection error:", err));
-
-//MongoDB schemas and models
-const adminSchema = new mongoose.Schema({
-    name: String,
-    phone: String,
-    email: { type: String, unique: true },
-    password: String,
-    date: Date
-});
-
-const UserSchema = new mongoose.Schema({
-    id: String,
-    name: String,
-    phone: String,
-    email: { type: String, unique: true },
-    password: String,
-    date: Date,
-  });
-
-const productSchema = new mongoose.Schema({
-    image: String,
-    brand: String,
-    product: String,
-    boughtPrice: Number,
-    price: Number,
-    discount: Number,
-    size: String,
-    stocks: Number,
-    description: String,
-  });
-
-  const ReviewSchema = new mongoose.Schema({
-    productid: String,
-    useremail: String,
-    text: String,
-    label: Number,
-  });
-
-const orderItemSchema = new mongoose.Schema({
-    orderid: String,
-    useremail: String,
-    productid: String,
-    size: String,
-    quantity: Number,
-  });
-
-const orderDetailsSchema = new mongoose.Schema({
-    orderid: String,
-    useremail: String,
-    totalamount: Number,
-    payment: String,
-    address: String,
-    bookeddate: Date,
-    status: String,
-  });
-
-  const soldProductSchema = new mongoose.Schema({
-    productid: String,
-    brand: String,
-    size: String,
-    boughtprice: Number,
-    price: Number,
-    soldquantity: Number,
-  });
-
-const User = mongoose.model("shop_user", UserSchema);
-const Admin = mongoose.model("shop_Admin", adminSchema);
-const Product = mongoose.model("shop_Product", productSchema);
-const Review = mongoose.model("shop_Review", ReviewSchema);
-const OrderItem = mongoose.model("shop_OrderItem", orderItemSchema);
-const OrderDetail = mongoose.model("shop_OrderDetail", orderDetailsSchema);
-const SoldProduct = mongoose.model("shop_SoldProduct", soldProductSchema);
-
-// JWT Authentication Middleware
 function authenticateToken(req, res, next) {
-    const token = req.headers['authorization'];
-    if (!token) return res.status(403).json({ message: "No token provided" });
+  const token = req.headers['authorization'];
+  console.log("Received token:", token); // Log the received token
+  if (!token) return res.status(403).json({ message: "No token provided" });
 
-    jwt.verify(token.split(' ')[1], JWT_SECRET, (err, user) => {
-        if (err) return res.status(403).json({ message: "Invalid token" });
-        req.user = user;
-        next();
-    });
+  jwt.verify(token.split(' ')[1], JWT_SECRET, (err, user) => {
+    if (err) {
+      console.error("Token verification error:", err); // Log any errors during verification
+      return res.status(403).json({ message: "Failed to authenticate token" });
+    }
+    req.user = user;
+    next();
+  });
 }
 
-app.get("/Adminlogin", async (req, res) => {
-    const data = JSON.parse(req.query.data);
-    try {
-        const user = await Admin.findOne({ email: data.email });
-        console.log("User Found:", user);
-
-        if (user && user.password === data.password) {
-            const token = jwt.sign(
-                { id: user._id, email: user.email },
-                JWT_SECRET,
-                { expiresIn: "2h" }
-            );
-            return res.status(200).json({
-                login: "successful",
-                token,
-                email: user.email,
-            });
-        } else {
-            console.log("Invalid email or password");
-            return res.status(401).json({
-                success: false,
-                message: "Invalid email or password",
-            });
-        }
-    } catch (error) {
-        console.error("Error:", error);
-        return res.status(500).json({
-            success: false,
-            message: "Internal Server Error",
-        });
-    }
-});
-
-app.post("/Adminsignup", async (req, res) => {
-    const details = req.body;
-    const hashedPassword = await bcrypt.hash(details.password, 10);
-    try {
-        const newAdmin = new Admin({
-            id: details.id,
-            name: details.name,
-            phone: details.phone,
-            email: details.email,
-            password: hashedPassword,
-            date: new Date()
-        });
-        await newAdmin.save();
-        const token = jwt.sign({ _id: newAdmin.id, email: newAdmin.email }, JWT_SECRET, { expiresIn: "2h" });
-        res.status(200).json({ login: "Registered successful", token });
-    } catch (err) {
-        console.error(err);
-        if (err.code === 11000) {
-            res.status(401).json({ success: false, message: "Already a user with this email" });
-        } else {
-            res.status(500).send("Internal Server Error");
-        }
-    }
-});
-
-app.get("/users", authenticateToken, async (req, res) => {
-    try {
-        const users = await User.find({}, { password: 0 }); 
-        res.json(users);
-    } catch (error) {
-        console.error("Error fetching users:", error);
-        res.status(500).send("Internal Server Error");
-    }
-});
-
-app.post("/productdetail", authenticateToken, async (req, res) => {
-    const detail = req.body;
-    try {
-        const newProduct = new Product({
-            image: detail.image,
-            brand: detail.brand,
-            product: detail.product,
-            boughtPrice: detail.bought,
-            price: detail.price,
-            discount: detail.discount,
-            size: detail.size,
-            stocks: detail.stock,
-            description: detail.description
-        });
-        await newProduct.save();
-        res.status(200).send("Product Added Successfully");
-    } catch (err) {
-        console.error(err);
-        res.status(500).send("Product not added");
-    }
-});
-
-app.get("/adminreviews", authenticateToken, async (req, res) => {
-    try {
-        const reviews = await Review.find({});
-        console.log("Reviews Found:", reviews);
-        res.json(reviews);
-    } catch (err) {
-        console.error("Error fetching reviews:", err);
-        res.status(500).send("Internal Server Error");
-    }
-});
-
-app.get("/allproducts", authenticateToken, async (req, res) => {
-    try {
-        const products = await Product.find({});
-        res.json(products);
-    } catch (err) {
-        console.error(err);
-        res.status(500).send("Internal Server Error");
-    }
-});
-
-app.post("/deleteproduct", authenticateToken, async (req, res) => {
-    const productId = req.body.id;
-    console.log("delete",productId)
-    try {
-        await Product.deleteOne({ _id: productId });
-        res.status(200).json({ success: true });
-    } catch (err) {
-        console.error(err);
-        res.status(500).send("Product not Deleted");
-    }
-});
-
-app.post("/updatestock", authenticateToken, async (req, res) => {
-    const { productid, size, stock } = req.body;
-    try {
-        const product = await Product.findOne({ _id: productid });
-        if (product) {
-            product.stocks += stock;
-            await product.save();
-            res.status(200).send("Product Stock updated");
-        } else {
-            res.status(404).send("Product not found");
-        }
-    } catch (err) {
-        console.error(err);
-        res.status(500).send("Product Stock not updated");
-    }
-});
-
-app.get("/items", authenticateToken, async (req, res) => {
-    try {
-        const items = await OrderItem.find({});
-        console.log("Order Items:", items);
-        res.json(items);
-    } catch (error) {
-        console.error("Error fetching order items:", error);
-        res.status(500).send("Internal Server Error");
-    }
-});
-
-app.get("/orders", authenticateToken, async (req, res) => {
-    try {
-        const orders = await OrderDetail.find({});
-        console.log("Orders:", orders);
-        res.json(orders);
-    } catch (error) {
-        console.error("Error fetching orders:", error);
-        res.status(500).send("Internal Server Error");
-    }
-});
-
-app.post("/orderstatus", authenticateToken, async (req, res) => {
-    const { id, status } = req.body;
-
-    try {
-        const updatedOrder = await OrderDetail.findOneAndUpdate(
-            { orderid: id },
-            { status: status },
-            { new: true } 
-        );
-
-        if (!updatedOrder) {
-            return res.status(404).json({ success: false, message: "Order not found" });
-        }
-
-        res.status(200).json({ success: true, message: "Order status updated", order: updatedOrder });
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ success: false, message: "Error updating order status" });
-    }
-});
-
-
-app.get("/data", authenticateToken, async (req, res) => {
+//Admin side
+app.get("/Adminlogin", async function(req, res){
+  const data = JSON.parse(req.query.data);
   try {
-    const data = await SoldProduct.aggregate([
-      {
-        $group: {
-          _id: { brand: "$brand", size: "$size" },
-          totalRevenue: { $sum: { $multiply: ["$price", "$soldquantity"] } },
-          totalCost: { $sum: { $multiply: ["$boughtPrice", "$soldquantity"] } }
+    const queryResult = await new Promise((resolve, reject) => {
+      connection.query("SELECT * FROM admin WHERE email = ?", data.email, function (err, result, fields) {
+        if (err) {
+          reject(err);
+          return;
         }
-      },
-      {
-        $project: {
-          _id: 0,
-          name: {
-            $concat: ["$_id.brand", " - ", "$_id.size"]
-          },
-          value: { $subtract: ["$totalRevenue", "$totalCost"] } // this is the profit
-        }
-      }
-    ]);
+        resolve(result);
+      });
+    });
 
-    console.log("Pie Chart Profit Data:", data);
-    res.json(data);
+    if (queryResult.length > 0) {
+      const user = queryResult[0];
+      const passwordMatch = await bcrypt.compare(data.password, user.password);
+      if (passwordMatch) {
+        const token = jwt.sign(
+          { id: user.id, email: user.email },
+          JWT_SECRET,
+          { expiresIn: "1h" }
+        );
+        return res.status(200).json({ login: "successful", token });
+      } else {
+        return res.status(401).json({ success: false, message: "Invalid email or password" });
+      }
+    } else {
+      return res.status(401).json({ success: false, message: "User not found" });
+    }
   } catch (error) {
-    console.error("Error fetching profit data:", error);
-    res.status(500).send("Internal Server Error");
+    console.error("Admin login error:", error);
+    return res.status(500).json({ success: false, message: "Database error" });
   }
 });
 
+// Signup Route
+app.post("/Adminsignup", async function (req, res) {
+  const details = req.body;
+  const hashedPassword = await bcrypt.hash(details.password, 10);
 
+  connection.query("SHOW TABLES LIKE 'admin'", function (err, result) {
+    if (err) {
+      console.error("Error checking admin table:", err);
+      return res.status(500).json({ success: false, message: "Database error" });
+    }
 
-app.get("/logout", authenticateToken, (req, res) => {
-  console.log("Logout successful");
-  res.status(200).json({ status: "successful" });
+    if (result.length === 0) {
+      const createTableQuery = `
+        CREATE TABLE admin (
+          id VARCHAR(20),
+          name VARCHAR(40),
+          phone VARCHAR(255),
+          email VARCHAR(100) UNIQUE PRIMARY KEY,
+          password VARCHAR(255),
+          date DATE
+        )
+      `;
+      connection.query(createTableQuery, function (err, result) {
+        if (err) {
+          console.error("Error creating admin table:", err);
+          return res.status(500).json({ success: false, message: "Database error" });
+        }
+        console.log("Table admin created");
+      });
+    }
+
+    connection.query("SELECT * FROM admin WHERE email = ?", details.email, function (err, prevResult, fields) {
+      if (err) {
+        console.error("Error checking admin user:", err);
+        return res.status(500).json({ success: false, message: "Database error" });
+      }
+      if (prevResult.length === 0) {
+        const insertDataQuery = "INSERT INTO admin (id, name, phone, email, password, date) VALUES ?";
+        const values = [
+          [details.id, details.name, details.phone, details.email, hashedPassword, date]
+        ];
+        
+        connection.query(insertDataQuery, [values], function (err, result) {
+          if (err) {
+            console.error("Error inserting admin user:", err);
+            return res.status(500).json({ success: false, message: "Database error" });
+          }
+          console.log("1 record inserted");
+
+          // Generate a JWT token after successful signup
+          const token = jwt.sign(
+            { id: details.id, email: details.email },
+            JWT_SECRET,
+            { expiresIn: "1h" }
+          );
+          return res.status(200).json({ login: "successful", token });
+        });
+      } else {
+        return res.status(401).json({ success: false, message: "Already a user with this email" });
+      }
+    });
+  });
 });
 
-app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+app.get("/users",authenticateToken,function(req,res){
+  connection.query("Select * from users",async function(err, result, fields){
+    try {
+      console.log("Users");
+      console.log(result);
+
+      const data = result.map((user)=>{
+        const{password , ...rest} = user
+        return rest
+      })
+      console.log(data);
+      res.json(data)
+
+  } catch (error) {
+      console.error("Error fetching data:", error);
+      res.status(500).send("Internal Server Error");
+  }
+})
+})
+
+app.post("/productdetail",authenticateToken,function(req,res){
+  let detail = req.body
+  console.log(detail);
+   
+    connection.query("SHOW TABLES LIKE 'product'", function(err, result){
+      if(err) {
+        console.error("Error checking product table:", err);
+        return res.status(500).send("Database error");
+      }
+    try{
+      if (result.length === 0) {
+      // 'product' table does not exist, create it
+      var createTableQuery = "CREATE TABLE product(productid INT NOT NULL AUTO_INCREMENT PRIMARY KEY,image VARCHAR(255),brand varchar(20),product varchar(20),boughtprice INT,price INT,discount INT,size varchar(20),stock INT,description varchar(100));";
+      connection.query(createTableQuery, function(err, result) {
+        if (err) {
+          console.error("Error creating product table:", err);
+          return res.status(500).send("Database error");
+        }
+        console.log("Table product created");
+    
+        var insertproductData = "INSERT INTO product(image,brand,product,boughtprice,price,discount,size,stock,description) VALUES ?";
+        var values = [
+          [detail.image,detail.brand,detail.product, detail.bought, detail.price,detail.discount,detail.size,detail.stock,detail.description]
+        ];
+    
+        connection.query(insertproductData, [values], function(err, result) {
+          if (err) {
+            console.error("Error inserting product:", err);
+            return res.status(500).send("Database error");
+          }
+          console.log("1 record inserted in product");
+        });
+
+      });
+      res.status(200).send("Product Added Successfully");
+    } else {
+      console.log("Table already exists");
+
+      var insertproductData = "INSERT INTO product(image,brand,product,boughtprice,price,discount,size,stock,description) VALUES ?";
+      var values = [
+        [detail.image,detail.brand,detail.product, detail.bought, detail.price,detail.discount,detail.size,detail.stock,detail.description]
+      ];
+
+      connection.query(insertproductData, [values], function(err, result) {
+        if (err) {
+          console.error("Error inserting product:", err);
+          return res.status(500).send("Database error");
+        }
+        console.log("1 record inserted product");
+      });
+      res.status(200).send("Product Added Successfully");
+    }
+  }catch(err){
+      console.log("Product not added",err);
+      res.status(500).send("Product not added");
+  }
+})
+})
+
+app.get("/adminreviews", authenticateToken,function(req,res){
+  connection.query("Select * from reviews",async function(err, result, fields){
+    try {
+      if (err) {
+        console.error("Error fetching reviews:", err);
+        return res.status(500).send("Internal Server Error");
+      }
+      console.log("Review Found");
+      console.log(result);
+      res.json(result)
+
+  } catch (error) {
+      console.log("Error fetching data", error);
+      res.status(500).send("Internal Server Error");
+  }
+})
+})
+
+app.post("/updatestock", authenticateToken,function(req,res){
+  const data = req.body
+  const id =data.productid
+  console.log(data);
+ try{
+  connection.query("SELECT * FROM product WHERE productid = ? and size = ?",[data.productid,data.size], function(err, result) {
+    if (err) {
+      console.error("Error checking stock:", err);
+      return res.status(500).send("Product Stock not updated");
+    }
+    console.log("Data from inventory",result);
+    if(result.length > 0){
+      const newquantity = result[0].stock + data.stock;
+
+      connection.query("UPDATE product SET stock = ? WHERE productid = ? AND size = ?", 
+      [newquantity,data.productid,data.size], function(err, result) {
+      console.log("1 product updated quantity");
+    });
+    res.status(200).send("Product Stock updated");
+    }
+});
+ }
+ catch(err){
+  console.log("Product Stock not updated",err);
+  res.status(500).send("Product Stock not updated");
+}
+
+})
+
+app.get("/allproducts", authenticateToken,function(req,res){
+  connection.query("Select * from product",async function(err, result, fields){
+    try {
+      console.log("Products");
+      console.log(result);
+      res.json(result)
+
+  } catch (error) {
+      console.error("Error fetching data:", error);
+      res.status(500).send("Internal Server Error");
+  }
+})
+})
+
+app.post("/deleteproduct", authenticateToken,function(req,res){
+  const data = req.body.productid
+  console.log(data);
+ 
+  try{
+  connection.query("DELETE FROM product WHERE productid =?",data, function(err, result, fields){
+    if (err) {
+      console.error("Error deleting product:", err);
+      res.status(500).send("Internal Server Error");
+      return;
+    }
+    else{
+      console.log("Product Deleted successfully");
+      return res.status(200).json({ success: true });
+
+    }
+    })
+    connection.query("DELETE FROM soldproduct WHERE productid =?",data, function(err, result, fields){
+      if (err) {
+        console.error("Error deleting product:", err);
+        res.status(500).send("Internal Server Error");
+        return;
+      }
+      })
+    }catch(err){
+      console.log("Product not Deleted",err);
+      res.status(500).send("Product not Deleted");
+    }
+})
+
+app.get("/items", authenticateToken,function(req,res){
+  connection.query("Select * from orderitem",async function(err, result, fields){
+    try {
+      console.log("Order Items");
+      console.log(result);
+      res.json(result)
+
+  } catch (error) {
+      console.error("Error fetching data:", error);
+      res.status(500).send("Internal Server Error");
+  }
+})
+})
+
+app.get("/orders", authenticateToken,function(req,res){
+  connection.query("Select * from orderdetails",async function(err, result, fields){
+    try {
+      console.log("Orders");
+      console.log(result);
+      res.json(result)
+
+  } catch (error) {
+      console.error("Error fetching data:", error);
+      res.status(500).send("Internal Server Error");
+  }
+})
+})
+
+app.post("/orderstatus", authenticateToken,function(req,res){
+  const data = req.body
+  console.log(data);
+
+  connection.query("UPDATE orderdetails SET status = ? WHERE orderid = ?",[data.status,data.id],async function(err, result, fields){
+    try {
+      console.log("Order Details");
+      console.log(result);
+      res.json(result)
+
+  } catch (error) {
+      console.error("Error fetching data:", error);
+      res.status(500).send("Internal Server Error");
+  }
+})
+})
+
+
+app.get('/data', authenticateToken,(req, res) => {
+  const query = `
+    SELECT 
+      productid, 
+      brand, 
+      size, 
+      SUM(boughtprice * soldquantity) AS total_boughtprice,
+      SUM(price * soldquantity) AS total_price,
+      SUM(soldquantity) AS total_soldquantity,
+      CASE 
+        WHEN SUM(price * soldquantity) > SUM(boughtprice * soldquantity) THEN 'Profit'
+        ELSE 'Loss'
+      END AS profit_loss
+    FROM 
+      soldproduct 
+    GROUP BY 
+      productid, 
+      brand, 
+      size`;
+  
+  connection.query(query, (error, results) => {
+    if (error) {
+      if (error.code === "ER_NO_SUCH_TABLE") {
+        console.error("Table soldproduct does not exist:", error);
+        return res.status(404).json({ success: false, message: "Table soldproduct does not exist" });
+      }
+      console.error("Error fetching sales report:", error);
+      return res.status(500).json({ success: false, message: "Database error" });
+    }
+    res.json(results);
+  });
+});
+
+
+app.get("/logout", authenticateToken, function(req, res) {
+  console.log("Logout successful");
+  return res.status(200).json({ status: "successful" });
+});
+
+connection.connect(function(err) {
+  if (err) {
+    console.error("Database connection failed:", err.message);
+    return;
+  }
+  console.log("Database Connected!");
+ 
+});
+
+app.listen(process.env.PORT, () => {
+  console.log(`Server is running on port ${process.env.PORT}`);
 });
