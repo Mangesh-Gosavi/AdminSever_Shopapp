@@ -24,4 +24,21 @@ async function uploadImage(req, res) {
   }
 }
 
-module.exports = { uploadImage };
+async function deleteImage(req, res) {
+  try {
+    const { url } = req.body;
+    if (!url) return res.status(400).json({ success: false, message: "url required" });
+
+    const match = url.match(/\/upload\/(?:v\d+\/)?(.+)\.[a-zA-Z0-9]+$/);
+    if (!match) return res.status(400).json({ success: false, message: "invalid cloudinary url" });
+    const publicId = match[1];
+
+    const result = await cloudinary.uploader.destroy(publicId);
+    return res.json({ success: result.result === "ok", result });
+  } catch (error) {
+    console.error("deleteimage error:", error);
+    return res.status(500).json({ success: false, message: "delete failed" });
+  }
+}
+
+module.exports = { uploadImage, deleteImage };

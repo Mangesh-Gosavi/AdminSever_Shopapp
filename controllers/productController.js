@@ -40,7 +40,7 @@ const getAllProducts = (req, res) => {
 };
 
 const deleteProduct = (req, res) => {
-  const productid = req.body.productid;
+  const productid = req.body.id;
   console.log(productid);
 
   try {

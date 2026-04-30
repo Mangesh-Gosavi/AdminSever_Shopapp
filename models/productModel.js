@@ -5,7 +5,7 @@ const createProductTableIfNotExists = (callback) => {
     if (err) return callback(err);
     if (result.length === 0) {
       const createTableQuery =
-        "CREATE TABLE product(productid INT NOT NULL AUTO_INCREMENT PRIMARY KEY,image VARCHAR(255),brand varchar(20),product varchar(20),boughtprice INT,price INT,discount INT,size varchar(20),stock INT,description varchar(100));";
+        "CREATE TABLE product(productid INT NOT NULL AUTO_INCREMENT PRIMARY KEY,image VARCHAR(255),brand varchar(20),product varchar(20),boughtprice INT,price INT,discount INT,size varchar(100),stock INT,description varchar(100));";
       connection.query(createTableQuery, function (err) {
         if (err) return callback(err);
         console.log("Table product created");
